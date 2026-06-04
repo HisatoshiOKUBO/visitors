@@ -484,6 +484,14 @@ function exportPDF() {
   let rows = allRecords;
   if (from) rows = rows.filter(r => r.visit_date >= from);
   if (to)   rows = rows.filter(r => r.visit_date <= to);
+  // 日付昇順 → 同日内は来場時間昇順で並べ替え
+  rows = [...rows].sort((a, b) => {
+    if (a.visit_date < b.visit_date) return -1;
+    if (a.visit_date > b.visit_date) return  1;
+    if ((a.arrive_time || '') < (b.arrive_time || '')) return -1;
+    if ((a.arrive_time || '') > (b.arrive_time || '')) return  1;
+    return 0;
+  });
   const cDate = document.getElementById('exp-cd').value;
   const cBy   = document.getElementById('exp-cb').value;
   const CHECK_LABELS = [
