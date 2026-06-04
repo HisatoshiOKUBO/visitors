@@ -472,7 +472,10 @@ function exportCSV() {
   const blob = new Blob([BOM + lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `来場者記録_${new Date().toISOString().slice(0,10)}.csv`;
+  const csvDates = rows.map(r => r.visit_date).filter(Boolean).sort();
+  const csvFrom = (from || (csvDates[0] || '')).replace(/-/g, '/');
+  const csvTo   = (to   || (csvDates[csvDates.length - 1] || '')).replace(/-/g, '/');
+  a.download = `来場者記録　${csvFrom}～${csvTo}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -510,7 +513,11 @@ function exportPDF() {
   }).join('');
   const checkHtml = CHECK_LABELS.map((l,i)=>`<p style="margin:2px 0;font-size:8pt"><strong>項目${i+1}：</strong>${l}</p>`).join('');
   const confirmHtml = (cDate||cBy) ? `<div style="margin-top:16px;font-size:9pt;display:flex;gap:40px"><span>確認日：<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;padding:0 4px">${cDate}</span></span><span>確認者：<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;padding:0 4px">${cBy}</span></span></div>` : '';
-  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>来場者記録</title>
+  const pdfDates = rows.map(r => r.visit_date).filter(Boolean).sort();
+  const pdfFrom = (from || (pdfDates[0] || '')).replace(/-/g, '/');
+  const pdfTo   = (to   || (pdfDates[pdfDates.length - 1] || '')).replace(/-/g, '/');
+  const pdfTitle = `来場者記録　${pdfFrom}～${pdfTo}`;
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${pdfTitle}</title>
 <style>@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:"MS Gothic","Hiragino Kaku Gothic ProN",sans-serif;font-size:9pt;padding:8px}h1{text-align:center;font-size:13pt;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:12px}th,td{border:1px solid #333;padding:3px 5px;vertical-align:middle}th{background:#e8e8e8;font-size:8pt;text-align:center}td.c{text-align:center}.btn-bar{margin-bottom:12px;display:flex;gap:8px}.btn-print{padding:8px 24px;background:#2c5f2e;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer}@media print{.btn-bar{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>
 </head><body>
 <div class="btn-bar"><button class="btn-print" onclick="window.print()">🖨️ PDFとして保存 / 印刷</button><button class="btn-print" style="background:#555" onclick="window.close()">✕ 閉じる</button></div>
