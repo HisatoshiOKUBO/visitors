@@ -122,7 +122,7 @@ td.c{text-align:center}
       <div class="header-company">株式会社　サイボクファーム</div>
       <div class="header-title">来場者記録　<span class="admin-badge">🔒 管理者専用</span></div>
     </div>
-    <button id="btn-logout" class="btn-logout" style="display:none">ログアウト</button>
+    <div id="hdr-actions" style="display:none;gap:8px;flex-shrink:0"><button id="btn-admins" class="btn-logout">👤 管理者設定</button><button id="btn-logout" class="btn-logout">ログアウト</button></div>
   </div>
 </header>
 
@@ -238,6 +238,51 @@ td.c{text-align:center}
   </div>
 </div>
 
+<!-- 管理者設定モーダル -->
+<div class="modal-overlay" id="adminsOverlay" onclick="if(event.target===this)closeAdmins()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">👤 管理者設定</div>
+      <button class="modal-close" onclick="closeAdmins()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div style="font-weight:700;color:var(--gd);margin-bottom:8px">管理者一覧</div>
+      <div class="table-wrap" style="margin-bottom:6px">
+        <table style="min-width:420px">
+          <thead><tr><th>メールアドレス</th><th>最終ログイン</th><th>操作</th></tr></thead>
+          <tbody id="adm-tbody"><tr><td colspan="3" class="c" style="padding:14px">読み込み中…</td></tr></tbody>
+        </table>
+      </div>
+      <div id="adm-msg" style="font-size:12px;color:var(--er);min-height:18px;margin-bottom:10px"></div>
+
+      <div style="font-weight:700;color:var(--gd);margin:14px 0 8px;padding-top:12px;border-top:2px solid var(--gp)">管理者を追加</div>
+      <div class="mg">
+        <div class="mfg full"><label>メールアドレス（@saiboku.co.jp）</label><input type="text" id="adm-new-email" placeholder="name@saiboku.co.jp" autocomplete="off" inputmode="email"></div>
+        <div class="mfg full">
+          <label>初期パスワード（12文字以上）</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="adm-new-pw" autocomplete="off" style="flex:1">
+            <button type="button" class="btn-filter" onclick="document.getElementById('adm-new-pw').value=genPassword()">自動生成</button>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:12px"><button class="btn-save" id="adm-add-btn" onclick="addAdmin()">追加する</button></div>
+      <div id="adm-result" style="font-size:13px;margin-top:10px;line-height:1.7"></div>
+
+      <div style="font-weight:700;color:var(--gd);margin:18px 0 8px;padding-top:12px;border-top:2px solid var(--gp)">自分のパスワードを変更</div>
+      <div class="mfg">
+        <label>新しいパスワード（12文字以上）</label>
+        <input type="password" id="adm-my-pw" autocomplete="new-password">
+      </div>
+      <div style="margin-top:12px"><button class="btn-save" id="adm-chpw-btn" onclick="changeMyPassword()">変更する</button></div>
+      <div id="adm-chpw-msg" style="font-size:13px;margin-top:8px"></div>
+
+    </div>
+    <div class="modal-footer"><button class="btn-cancel" onclick="closeAdmins()">閉じる</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -285,7 +330,7 @@ function showLogin(msg) {
   allRecords = [];
   document.getElementById('view-admin').style.display = 'none';
   document.getElementById('view-login').style.display = 'flex';
-  document.getElementById('btn-logout').style.display = 'none';
+  document.getElementById('hdr-actions').style.display = 'none';
   document.getElementById('pw').value = '';
   document.getElementById('rec-tbody').innerHTML = '';
   const err = document.getElementById('login-error');
@@ -340,7 +385,7 @@ async function doLogin() {
     document.getElementById('pw').value = '';
     document.getElementById('view-login').style.display = 'none';
     document.getElementById('view-admin').style.display = 'block';
-    document.getElementById('btn-logout').style.display = 'block';
+    document.getElementById('hdr-actions').style.display = 'flex';
     await loadRecords();
   } catch (e) {
     err.textContent = '⚠️ メールアドレスまたはパスワードが正しくありません。';
@@ -589,6 +634,165 @@ ${confirmHtml}
 </body></html>`;
   const w = window.open('', '_blank');
   if (w) { w.document.write(html); w.document.close(); setTimeout(()=>w.print(), 400); }
+}
+
+// ============================================================
+//  管理者設定（Edge Function admin-users 経由。サービスロールキーはブラウザに置かない）
+// ============================================================
+async function fnCall(payload, retry = true) {
+  if (!session) throw new Error('ログインしてください');
+  const r = await fetch(`${SUPABASE_URL}/functions/v1/admin-users`, {
+    method: 'POST',
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + session.access_token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+  if (r.status === 401 && retry) {
+    try { await refreshSession(); }
+    catch (e) { showLogin('セッションの有効期限が切れました。再ログインしてください。'); throw new Error('セッション切れ'); }
+    return fnCall(payload, false);
+  }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('エラー (' + r.status + ')'));
+  return j;
+}
+
+function genPassword() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const buf = new Uint32Array(16);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, n => chars[n % chars.length]).join('');
+}
+
+function fmtDateTime(s) {
+  if (!s) return '未ログイン';
+  const d = new Date(s);
+  return isNaN(d) ? '' : d.toLocaleString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function openAdmins() {
+  document.getElementById('adm-msg').textContent = '';
+  document.getElementById('adm-result').textContent = '';
+  document.getElementById('adm-chpw-msg').textContent = '';
+  document.getElementById('adm-new-email').value = '';
+  document.getElementById('adm-new-pw').value = genPassword();
+  document.getElementById('adm-my-pw').value = '';
+  document.getElementById('adminsOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  loadAdmins();
+}
+function closeAdmins() {
+  document.getElementById('adminsOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+  document.getElementById('adm-new-pw').value = '';
+  document.getElementById('adm-result').textContent = '';
+}
+document.getElementById('btn-admins').addEventListener('click', openAdmins);
+
+async function loadAdmins() {
+  const tbody = document.getElementById('adm-tbody');
+  const msg = document.getElementById('adm-msg');
+  msg.textContent = '';
+  try {
+    const j = await fnCall({ action: 'list' });
+    if (!j.admins.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="c" style="padding:14px">管理者がいません</td></tr>';
+      return;
+    }
+    tbody.innerHTML = j.admins.map(a => {
+      const isMe = a.email === j.me;
+      const em = esc(a.email);
+      return `<tr>
+        <td>${em}${isMe ? ' <span style="color:var(--tl);font-size:11px">（自分）</span>' : ''}${a.has_account ? '' : ' <span style="color:var(--er);font-size:11px">（アカウントなし）</span>'}</td>
+        <td class="c" style="font-size:12px">${esc(fmtDateTime(a.last_sign_in_at))}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-edit" data-act="reset" data-email="${em}">パスワード再設定</button>
+          ${isMe ? '' : `<button class="btn-del" data-act="del" data-email="${em}">削除</button>`}
+        </td></tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="3" class="c" style="padding:14px;color:var(--er)">一覧を取得できませんでした</td></tr>';
+    msg.textContent = e.message + '（Edge Function が未設置の可能性があります）';
+  }
+}
+
+document.getElementById('adm-tbody').addEventListener('click', async (ev) => {
+  const btn = ev.target.closest('button[data-act]');
+  if (!btn) return;
+  const email = btn.getAttribute('data-email');
+  const msg = document.getElementById('adm-msg');
+  msg.textContent = '';
+  if (btn.getAttribute('data-act') === 'del') {
+    if (!confirm(`${email} を管理者から削除します。\nこのアカウントも削除され、ログインできなくなります。よろしいですか？`)) return;
+    try {
+      await fnCall({ action: 'delete', email });
+      toast('削除しました');
+      await loadAdmins();
+    } catch (e) { msg.textContent = e.message; }
+  } else if (btn.getAttribute('data-act') === 'reset') {
+    const pw = genPassword();
+    if (!confirm(`${email} のパスワードを新しい値に再設定します。よろしいですか？`)) return;
+    try {
+      await fnCall({ action: 'reset_password', email, password: pw });
+      const res = document.getElementById('adm-result');
+      res.textContent = '';
+      const strong = document.createElement('strong');
+      strong.textContent = pw;
+      res.append(`${email} の新しいパスワード：`, strong, '　本人に直接お伝えください（このメッセージは閉じると消えます）。');
+    } catch (e) { msg.textContent = e.message; }
+  }
+});
+
+async function addAdmin() {
+  const email = document.getElementById('adm-new-email').value.trim().toLowerCase();
+  const pw = document.getElementById('adm-new-pw').value;
+  const res = document.getElementById('adm-result');
+  const msg = document.getElementById('adm-msg');
+  const btn = document.getElementById('adm-add-btn');
+  msg.textContent = '';
+  res.textContent = '';
+  if (!email.endsWith(ADMIN_DOMAIN)) { msg.textContent = `${ADMIN_DOMAIN} のメールアドレスを入力してください`; return; }
+  if (pw.length < 12) { msg.textContent = 'パスワードは12文字以上にしてください'; return; }
+  btn.disabled = true;
+  try {
+    const j = await fnCall({ action: 'create', email, password: pw });
+    document.getElementById('adm-new-email').value = '';
+    if (j.existed) {
+      res.textContent = `${email} は既にアカウントがあったため、管理者として追加しました（パスワードは変更していません）。`;
+    } else {
+      const strong = document.createElement('strong');
+      strong.textContent = pw;
+      res.append(`${email} を追加しました。初期パスワード：`, strong, '　本人に直接お伝えください。ログイン後に「自分のパスワードを変更」で変更してもらいます。');
+    }
+    document.getElementById('adm-new-pw').value = genPassword();
+    await loadAdmins();
+  } catch (e) {
+    msg.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function changeMyPassword() {
+  const pw = document.getElementById('adm-my-pw').value;
+  const out = document.getElementById('adm-chpw-msg');
+  out.style.color = 'var(--er)';
+  if (pw.length < 12) { out.textContent = 'パスワードは12文字以上にしてください'; return; }
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.msg || j.error_description || 'パスワードを変更できませんでした');
+    document.getElementById('adm-my-pw').value = '';
+    out.style.color = 'var(--gm)';
+    out.textContent = 'パスワードを変更しました。';
+  } catch (e) { out.textContent = e.message; }
 }
 </script>
 </body>
