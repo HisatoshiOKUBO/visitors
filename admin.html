@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
 <title>管理者画面｜株式会社サイボクファーム 来場者記録</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Noto+Serif+JP:wght@400;700&display=swap" rel="stylesheet">
@@ -34,8 +36,8 @@ body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--td);
 .login-error.show{display:block}
 .form-group{display:flex;flex-direction:column;gap:5px;margin-bottom:16px}
 label.flabel{font-size:12px;font-weight:500;color:var(--tm);letter-spacing:.04em}
-input[type="password"]{width:100%;padding:11px 13px;border:1.5px solid var(--gb);border-radius:var(--rs);background:var(--wh);font-family:'Noto Sans JP',sans-serif;font-size:15px;color:var(--td);transition:var(--tr)}
-input[type="password"]:focus{outline:none;border-color:var(--gm);box-shadow:0 0 0 3px rgba(44,110,53,.12)}
+input[type="password"],input[type="email"]{width:100%;padding:11px 13px;border:1.5px solid var(--gb);border-radius:var(--rs);background:var(--wh);font-family:'Noto Sans JP',sans-serif;font-size:15px;color:var(--td);transition:var(--tr)}
+input[type="password"]:focus,input[type="email"]:focus{outline:none;border-color:var(--gm);box-shadow:0 0 0 3px rgba(44,110,53,.12)}
 .btn-login{width:100%;padding:12px;background:var(--gm);color:var(--wh);border:none;border-radius:var(--rs);font-size:15px;font-weight:500;cursor:pointer;font-family:'Noto Sans JP',sans-serif;transition:var(--tr)}
 .btn-login:hover{background:var(--gd)}
 .card{background:var(--wh);border-radius:var(--r);box-shadow:var(--s1);padding:26px 26px 22px;margin-bottom:20px;border:1px solid var(--gb)}
@@ -131,9 +133,13 @@ td.c{text-align:center}
   <div class="login-card">
     <div class="login-icon">🔐</div>
     <div class="login-title">管理者ログイン</div>
-    <div id="login-error" class="login-error">⚠️ パスワードが正しくありません。</div>
+    <div id="login-error" class="login-error">⚠️ メールアドレスまたはパスワードが正しくありません。</div>
     <div class="form-group">
-      <label class="flabel" for="pw">管理者パスワード</label>
+      <label class="flabel" for="em">メールアドレス（@saiboku.co.jp）</label>
+      <input type="email" id="em" placeholder="name@saiboku.co.jp" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label class="flabel" for="pw">パスワード</label>
       <input type="password" id="pw" placeholder="パスワードを入力" autocomplete="current-password">
     </div>
     <button class="btn-login" id="btn-login">ログイン</button>
@@ -236,48 +242,19 @@ td.c{text-align:center}
 
 <script>
 // ============================================================
-//  ★★★ ここを自分のSupabase情報に書き換えてください ★★★
+//  Supabase 接続情報（anonキーは公開前提。権限はDB側のRLSで制御）
 // ============================================================
-const SUPABASE_URL     = 'https://eqpbaffvslpxawltrbpc.supabase.co';
+const SUPABASE_URL      = 'https://eqpbaffvslpxawltrbpc.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxcGJhZmZ2c2xweGF3bHRyYnBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5NjgyMDgsImV4cCI6MjA5NTU0NDIwOH0.47kauTC5Ybot15RRvsKc0cBZcNWfYEc5rYxUbUBo8_8';
-/// 管理者パスワード（admin.phpの ADMIN_PASSWORD と同じ値を設定してください）
-const ADMIN_PASSWORD   = 'saibokufarm';
+const ADMIN_DOMAIN      = '@saiboku.co.jp';   // 画面上の簡易チェック（本当の制限はDBのRLS）
 // ============================================================
 
-function sbH() {
-  return {
-    'apikey': SUPABASE_ANON_KEY,
-    'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-    'Content-Type': 'application/json',
-    'Prefer': 'return=representation'
-  };
-}
-async function sbGet(table, params='') {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, { headers: sbH() });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-async function sbPost(table, body) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, { method:'POST', headers:sbH(), body:JSON.stringify(body) });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-async function sbPatch(table, filter, body) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, { method:'PATCH', headers:sbH(), body:JSON.stringify(body) });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-async function sbDelete(table, filter) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, { method:'DELETE', headers:{...sbH(),'Prefer':''} });
-  if (!r.ok) throw new Error(await r.text());
-}
-
-// ===== 認証 =====
-let isLoggedIn = false;
+// ===== セッション（メモリのみ。リロードで再ログイン） =====
+let session = null;   // { access_token, refresh_token }
 let allRecords = [];
 
 function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function fmtTime(t) { return t ? String(t).substring(0,5) : ''; }
 function toast(msg) {
@@ -286,25 +263,103 @@ function toast(msg) {
   setTimeout(()=>el.classList.remove('show'), 2500);
 }
 
-document.getElementById('btn-login').addEventListener('click', () => {
-  const pw = document.getElementById('pw').value;
-  if (pw === ADMIN_PASSWORD) {
-    isLoggedIn = true;
-    document.getElementById('view-login').style.display = 'none';
-    document.getElementById('view-admin').style.display = 'block';
-    document.getElementById('btn-logout').style.display = 'block';
-    loadRecords();
-  } else {
-    document.getElementById('login-error').classList.add('show');
-  }
-});
-document.getElementById('pw').addEventListener('keydown', e => { if (e.key==='Enter') document.getElementById('btn-login').click(); });
-document.getElementById('btn-logout').addEventListener('click', () => {
-  isLoggedIn = false;
+// ===== Supabase Auth =====
+async function authRequest(grant, body) {
+  const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=${grant}`, {
+    method: 'POST',
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error('auth');
+  return j;
+}
+async function refreshSession() {
+  if (!session || !session.refresh_token) throw new Error('no session');
+  const j = await authRequest('refresh_token', { refresh_token: session.refresh_token });
+  session = { access_token: j.access_token, refresh_token: j.refresh_token };
+}
+
+function showLogin(msg) {
+  session = null;
+  allRecords = [];
   document.getElementById('view-admin').style.display = 'none';
   document.getElementById('view-login').style.display = 'flex';
   document.getElementById('btn-logout').style.display = 'none';
   document.getElementById('pw').value = '';
+  document.getElementById('rec-tbody').innerHTML = '';
+  const err = document.getElementById('login-error');
+  if (msg) { err.textContent = '⚠️ ' + msg; err.classList.add('show'); }
+  else { err.classList.remove('show'); }
+}
+
+// ===== REST（ログイン済みトークンで実行。401なら1回だけ更新して再試行） =====
+async function sbFetch(path, opts = {}, retry = true) {
+  if (!session) throw new Error('ログインしてください');
+  const headers = Object.assign({
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': 'Bearer ' + session.access_token,
+    'Content-Type': 'application/json'
+  }, opts.headers || {});
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, Object.assign({}, opts, { headers }));
+  if (r.status === 401 && retry) {
+    try { await refreshSession(); }
+    catch (e) { showLogin('セッションの有効期限が切れました。再ログインしてください。'); throw new Error('セッション切れ'); }
+    return sbFetch(path, opts, false);
+  }
+  if (!r.ok) throw new Error(await r.text());
+  return r;
+}
+async function sbGet(table, params = '') {
+  const r = await sbFetch(`${table}?${params}`);
+  return r.json();
+}
+async function sbPost(table, body) {
+  await sbFetch(table, { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify(body) });
+}
+async function sbPatch(table, filter, body) {
+  await sbFetch(`${table}?${filter}`, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify(body) });
+}
+async function sbDelete(table, filter) {
+  await sbFetch(`${table}?${filter}`, { method: 'DELETE', headers: { 'Prefer': 'return=minimal' } });
+}
+
+// ===== ログイン / ログアウト =====
+async function doLogin() {
+  const email = document.getElementById('em').value.trim().toLowerCase();
+  const pw = document.getElementById('pw').value;
+  const btn = document.getElementById('btn-login');
+  const err = document.getElementById('login-error');
+  err.classList.remove('show');
+  if (!email || !pw) { err.textContent = '⚠️ メールアドレスとパスワードを入力してください。'; err.classList.add('show'); return; }
+  if (!email.endsWith(ADMIN_DOMAIN)) { err.textContent = '⚠️ 会社のメールアドレスでログインしてください。'; err.classList.add('show'); return; }
+  btn.disabled = true;
+  try {
+    const j = await authRequest('password', { email, password: pw });
+    session = { access_token: j.access_token, refresh_token: j.refresh_token };
+    document.getElementById('pw').value = '';
+    document.getElementById('view-login').style.display = 'none';
+    document.getElementById('view-admin').style.display = 'block';
+    document.getElementById('btn-logout').style.display = 'block';
+    await loadRecords();
+  } catch (e) {
+    err.textContent = '⚠️ メールアドレスまたはパスワードが正しくありません。';
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById('btn-login').addEventListener('click', doLogin);
+document.getElementById('pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('em').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('pw').focus(); });
+document.getElementById('btn-logout').addEventListener('click', async () => {
+  const token = session && session.access_token;
+  showLogin();
+  if (token) {
+    try {
+      await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: 'POST', headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + token } });
+    } catch (_) {}
+  }
 });
 
 // ===== 記録読み込み =====
@@ -315,11 +370,12 @@ async function loadRecords() {
     let params = 'order=visit_date.desc,arrive_time.desc';
     const from = document.getElementById('filter-from').value;
     const to   = document.getElementById('filter-to').value;
-    if (from) params += `&visit_date=gte.${from}`;
-    if (to)   params += `&visit_date=lte.${to}`;
+    if (from) params += `&visit_date=gte.${encodeURIComponent(from)}`;
+    if (to)   params += `&visit_date=lte.${encodeURIComponent(to)}`;
     allRecords = await sbGet('vis_records', params);
     renderTable(allRecords);
   } catch(e) {
+    if (!session) return;
     tbody.innerHTML = `<tr><td colspan="15"><div class="empty" style="color:var(--er)">読み込みエラー: ${esc(e.message)}</div></td></tr>`;
   }
 }
@@ -331,15 +387,15 @@ function renderTable(records) {
     document.getElementById('count-bar').textContent = '';
     return;
   }
-  const CHECK_LABELS = ['車両及び靴の消毒','他施設立入・海外渡航なし','未消毒物品持込なし','海外使用物品持込なし','ダウンタイム2日以上'];
   tbody.innerHTML = records.map(r => {
-    const lt = r.leave_time && r.leave_time !== '00:00:00' ? fmtTime(r.leave_time) : '<span style="color:#aaa;font-size:12px">未退場</span>';
+    const lt = r.leave_time && r.leave_time !== '00:00:00' ? esc(fmtTime(r.leave_time)) : '<span style="color:#aaa;font-size:12px">未退場</span>';
     const checks = [1,2,3,4,5].map(i =>
       `<td class="c">${r['check'+i] ? '<span class="ck">✓</span>' : '<span class="cn">—</span>'}</td>`
     ).join('');
+    const id = parseInt(r.id, 10);
     return `<tr>
       <td>${esc(r.visit_date)}</td>
-      <td class="c">${fmtTime(r.arrive_time)}</td>
+      <td class="c">${esc(fmtTime(r.arrive_time))}</td>
       <td class="c">${lt}</td>
       <td>${esc(r.visitor_name)}</td>
       <td>${esc(r.company_name)}</td>
@@ -349,8 +405,8 @@ function renderTable(records) {
       <td class="c">${esc(r.area||'')}</td>
       ${checks}
       <td style="white-space:nowrap">
-        <button class="btn-edit" onclick="openModal(${r.id})">訂正</button>
-        <button class="btn-del" onclick="deleteRecord(${r.id})">削除</button>
+        <button class="btn-edit" onclick="openModal(${id})">訂正</button>
+        <button class="btn-del" onclick="deleteRecord(${id})">削除</button>
       </td>
     </tr>`;
   }).join('');
@@ -365,7 +421,7 @@ function clearFilter() {
 
 // ===== モーダル =====
 function openModal(id) {
-  const today = new Date().toISOString().slice(0,10);
+  const today = new Date().toLocaleDateString('sv-SE');
   const now   = new Date().toTimeString().slice(0,5);
   document.getElementById('m_id').value = id || 0;
   if (id) {
@@ -420,7 +476,7 @@ async function saveRecord() {
     check4:       document.getElementById('m_c4').checked,
     check5:       document.getElementById('m_c5').checked,
   };
-  if (!body.visit_date || !body.arrive_time || !body.visitor_name || !body.company_name || !body.purpose) {
+  if (!body.visit_date || document.getElementById('m_at').value === '' || !body.visitor_name || !body.company_name || !body.purpose) {
     toast('必須項目を入力してください'); return;
   }
   try {
@@ -447,6 +503,12 @@ async function deleteRecord(id) {
 }
 
 // ===== CSV出力 =====
+// 先頭が = + - @ タブ 改行 の値は、Excelで数式として実行されないよう ' を付ける
+function csvCell(v) {
+  let s = String(v == null ? '' : v);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+}
 function exportCSV() {
   const from = document.getElementById('filter-from').value;
   const to   = document.getElementById('filter-to').value;
@@ -455,7 +517,7 @@ function exportCSV() {
   if (to)   rows = rows.filter(r => r.visit_date <= to);
   const cDate = document.getElementById('exp-cd').value;
   const cBy   = document.getElementById('exp-cb').value;
-  const BOM = '\uFEFF';
+  const BOM = '﻿';
   const header = ['日付','来場時間','退場時間','氏名','会社・団体名','連絡先','用件','過去状況','区域立入','チェック1','チェック2','チェック3','チェック4','チェック5'];
   const lines = [header.join(',')];
   rows.forEach(r => {
@@ -465,29 +527,28 @@ function exportCSV() {
       r.visitor_name, r.company_name, r.tel||'', r.purpose,
       r.travel||'', r.area||'',
       r.check1?'✓':'', r.check2?'✓':'', r.check3?'✓':'', r.check4?'✓':'', r.check5?'✓':'',
-    ].map(v => { const s=String(v||''); return (s.includes(',')||s.includes('"'))?`"${s.replace(/"/g,'""')}"`:s; });
+    ].map(csvCell);
     lines.push(row.join(','));
   });
-  if (cDate || cBy) { lines.push(''); lines.push(`"確認日","${cDate}","確認者","${cBy}"`); }
+  if (cDate || cBy) { lines.push(''); lines.push([csvCell('確認日'),csvCell(cDate),csvCell('確認者'),csvCell(cBy)].join(',')); }
   const blob = new Blob([BOM + lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   const csvDates = rows.map(r => r.visit_date).filter(Boolean).sort();
   const csvFrom = (from || (csvDates[0] || '')).replace(/-/g, '/');
   const csvTo   = (to   || (csvDates[csvDates.length - 1] || '')).replace(/-/g, '/');
-  a.download = `来場者記録　${csvFrom}～${csvTo}.csv`;
+  a.download = `来場者記録　${csvFrom}～${csvTo}.csv`.replace(/[\\/:*?"<>|]/g, '_');
   a.click();
   URL.revokeObjectURL(a.href);
 }
 
-// ===== PDF出力 =====
+// ===== PDF出力（すべての値をエスケープして埋め込む） =====
 function exportPDF() {
   const from = document.getElementById('filter-from').value;
   const to   = document.getElementById('filter-to').value;
   let rows = allRecords;
   if (from) rows = rows.filter(r => r.visit_date >= from);
   if (to)   rows = rows.filter(r => r.visit_date <= to);
-  // 日付昇順 → 同日内は来場時間昇順で並べ替え
   rows = [...rows].sort((a, b) => {
     if (a.visit_date < b.visit_date) return -1;
     if (a.visit_date > b.visit_date) return  1;
@@ -506,17 +567,17 @@ function exportPDF() {
   ];
   const trRows = rows.map(r => {
     const lt = r.leave_time && r.leave_time !== '00:00:00'
-      ? `<td class="c">${fmtTime(r.leave_time)}</td>`
+      ? `<td class="c">${esc(fmtTime(r.leave_time))}</td>`
       : '<td class="c" style="color:#aaa">未退場</td>';
     const checks = [1,2,3,4,5].map(i=>`<td class="c">${r['check'+i]?'✓':''}</td>`).join('');
-    return `<tr><td>${r.visit_date}</td><td class="c">${fmtTime(r.arrive_time)}</td>${lt}<td>${r.visitor_name}</td><td>${r.company_name}</td><td>${r.tel||''}</td><td>${r.purpose}</td><td class="c">${r.travel||''}</td><td class="c">${r.area||''}</td>${checks}</tr>`;
+    return `<tr><td>${esc(r.visit_date)}</td><td class="c">${esc(fmtTime(r.arrive_time))}</td>${lt}<td>${esc(r.visitor_name)}</td><td>${esc(r.company_name)}</td><td>${esc(r.tel||'')}</td><td>${esc(r.purpose)}</td><td class="c">${esc(r.travel||'')}</td><td class="c">${esc(r.area||'')}</td>${checks}</tr>`;
   }).join('');
-  const checkHtml = CHECK_LABELS.map((l,i)=>`<p style="margin:2px 0;font-size:8pt"><strong>項目${i+1}：</strong>${l}</p>`).join('');
-  const confirmHtml = (cDate||cBy) ? `<div style="margin-top:16px;font-size:9pt;display:flex;gap:40px"><span>確認日：<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;padding:0 4px">${cDate}</span></span><span>確認者：<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;padding:0 4px">${cBy}</span></span></div>` : '';
+  const checkHtml = CHECK_LABELS.map((l,i)=>`<p style="margin:2px 0;font-size:8pt"><strong>項目${i+1}：</strong>${esc(l)}</p>`).join('');
+  const confirmHtml = (cDate||cBy) ? `<div style="margin-top:16px;font-size:9pt;display:flex;gap:40px"><span>確認日：<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;padding:0 4px">${esc(cDate)}</span></span><span>確認者：<span style="border-bottom:1px solid #333;display:inline-block;min-width:120px;padding:0 4px">${esc(cBy)}</span></span></div>` : '';
   const pdfDates = rows.map(r => r.visit_date).filter(Boolean).sort();
   const pdfFrom = (from || (pdfDates[0] || '')).replace(/-/g, '/');
   const pdfTo   = (to   || (pdfDates[pdfDates.length - 1] || '')).replace(/-/g, '/');
-  const pdfTitle = `来場者記録　${pdfFrom}～${pdfTo}`;
+  const pdfTitle = esc(`来場者記録　${pdfFrom}～${pdfTo}`);
   const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${pdfTitle}</title>
 <style>@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box;margin:0;padding:0}body{font-family:"MS Gothic","Hiragino Kaku Gothic ProN",sans-serif;font-size:9pt;padding:8px}h1{text-align:center;font-size:13pt;margin-bottom:8px}table{width:100%;border-collapse:collapse;margin-bottom:12px}th,td{border:1px solid #333;padding:3px 5px;vertical-align:middle}th{background:#e8e8e8;font-size:8pt;text-align:center}td.c{text-align:center}.btn-bar{margin-bottom:12px;display:flex;gap:8px}.btn-print{padding:8px 24px;background:#2c5f2e;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer}@media print{.btn-bar{display:none}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style>
 </head><body>

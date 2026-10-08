@@ -2,6 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="robots" content="noindex,nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>来場者記録｜株式会社サイボクファーム</title>
 <style>
@@ -173,19 +174,20 @@ input[type=time].input{-webkit-appearance:none;appearance:none;font-size:16px;pa
 
       <div class="field">
         <label class="label">氏名</label>
-        <input type="text" class="input" id="f-name" placeholder="例:埼牧 花子(漢字フルネーム)">
+        <input type="text" class="input" id="f-name" maxlength="100" placeholder="例:埼牧 花子(漢字フルネーム)">
       </div>
       <div class="field">
         <label class="label">会社・団体名</label>
-        <input type="text" class="input" id="f-company" placeholder="例:〇〇株式会社">
+        <input type="text" class="input" id="f-company" maxlength="200" placeholder="例:〇〇株式会社">
       </div>
       <div class="field">
         <label class="label">連絡先</label>
-        <input type="tel" class="input" id="f-tel" inputmode="numeric" pattern="[0-9]*" placeholder="例:0429892221(ハイフン不要)">
+        <div style="font-size:11px;color:#6b7280;margin:-2px 0 6px;line-height:1.5">忘れ物等があった場合の連絡のためにのみ使用します。</div>
+        <input type="tel" class="input" id="f-tel" maxlength="20" inputmode="numeric" pattern="[0-9]*" placeholder="例:0429892221(ハイフン不要)">
       </div>
       <div class="field">
         <label class="label">要件</label>
-        <input type="text" class="input" id="f-purpose" placeholder="例:打ち合わせ、見学など">
+        <input type="text" class="input" id="f-purpose" maxlength="500" placeholder="例:打ち合わせ、見学など">
       </div>
       <div class="field">
         <label class="label">入場時間</label>
@@ -334,32 +336,25 @@ input[type=time].input{-webkit-appearance:none;appearance:none;font-size:16px;pa
   <!-- ===== 退場フォーム ===== -->
   <div id="exit-form" style="display:none">
     <div class="exit-notice" id="exit-notice">
-      お名前の一部を入力して検索し、候補から選択してください。
+      入場時にご入力いただいた「氏名」と「会社・団体名」を、同じ内容でご入力ください。
     </div>
     <div class="card">
       <div class="card-title"><span class="card-title-main"><span class="card-num">2．</span>退場情報</span><span class="card-title-step" id="step-exit">2/2</span></div>
 
-      <!-- STEP1: 氏名検索 -->
       <div class="field">
-        <label class="label">氏名（一部でも可）</label>
-        <div style="display:flex;gap:8px">
-          <input type="text" class="input" id="f-exit-name" placeholder="例:埼牧、花子" style="flex:1" onkeydown="if(event.key==='Enter')searchExitCandidates()">
-          <button class="exit-search-btn" style="width:80px;margin-top:0" onclick="searchExitCandidates()">検索</button>
-        </div>
-        <!-- 候補リスト -->
-        <div class="exit-candidates" id="exitCandidates"></div>
+        <label class="label">氏名</label>
+        <input type="text" class="input" id="f-exit-name" maxlength="100" placeholder="例:埼牧 花子(入場時と同じ表記)">
       </div>
-
-      <!-- STEP2: 退場時間（候補選択後に表示） -->
-      <div class="exit-time-section" id="exitTimeSection">
-        <div class="exit-selected-banner" id="exitSelectedBanner"></div>
-        <div class="field" style="margin-bottom:0">
-          <label class="label">退場時間</label>
-          <input type="time" class="input" id="f-time-out">
-        </div>
+      <div class="field">
+        <label class="label">会社・団体名</label>
+        <input type="text" class="input" id="f-exit-company" maxlength="200" placeholder="例:〇〇株式会社(入場時と同じ表記)">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label class="label">退場時間</label>
+        <input type="time" class="input" id="f-time-out">
       </div>
     </div>
-    <button class="submit-btn exit" onclick="submitExit()">退場を登録する</button>
+    <button class="submit-btn exit" id="btn-submit-exit" onclick="submitExit()">退場を登録する</button>
     <div class="submit-error" id="submit-error-exit">未選択の項目があります</div>
   </div>
 
@@ -403,24 +398,19 @@ function sbH() {
     'apikey': SUPABASE_ANON_KEY,
     'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
     'Content-Type': 'application/json',
-    'Prefer': 'return=representation'
+    'Prefer': 'return=minimal'
   };
 }
-async function sbGet(table, params='') {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}`, { headers: sbH() });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
 async function sbPost(table, body) {
+  // 匿名には SELECT 権限がないため、return=minimal（応答本文なし）で送信する
   const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method:'POST', headers:sbH(), body:JSON.stringify(body)
   });
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
-async function sbPatch(table, filter, body) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
-    method:'PATCH', headers:sbH(), body:JSON.stringify(body)
+async function sbRpc(fn, args) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method:'POST', headers:sbH(), body:JSON.stringify(args)
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
@@ -781,103 +771,35 @@ async function submitEnter(){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
-/* ===== 退場：選択中レコードID ===== */
-let selectedExitId = null;
-
-/* ===== 退場候補検索 ===== */
-async function searchExitCandidates(){
-  const name = document.getElementById('f-exit-name').value.trim();
-  const errEl = document.getElementById('submit-error-exit');
-  errEl.classList.remove('show');
-  if(!name){
-    errEl.textContent='氏名を入力してください';
-    errEl.classList.add('show');
-    return;
-  }
-  // 選択リセット
-  selectedExitId = null;
-  document.getElementById('exitTimeSection').classList.remove('show');
-  document.getElementById('exitCandidates').classList.remove('show');
-  document.getElementById('exitCandidates').innerHTML='';
-
-  try{
-    const today = new Date().toLocaleDateString('sv-SE');
-    const rows = await sbGet('vis_records',
-      `visit_date=eq.${today}&visitor_name=like.*${encodeURIComponent(name)}*&order=arrive_time.desc&limit=20&select=id,visitor_name,company_name,visit_date,arrive_time,leave_time,purpose`
-    );
-    if(rows.length===0){
-      errEl.textContent='本日の来場記録が見つかりませんでした。別のキーワードでお試しください。';
-      errEl.classList.add('show');
-      return;
-    }
-    renderExitCandidates(rows);
-  }catch(e){
-    errEl.textContent='サーバーへの接続に失敗しました。';
-    errEl.classList.add('show');
-  }
-}
-
-/* ===== 候補リスト描画 ===== */
-function renderExitCandidates(records){
-  const box = document.getElementById('exitCandidates');
-  box.innerHTML='';
-  records.forEach(r=>{
-    const lt = r.leave_time && r.leave_time!=='00:00:00' && r.leave_time!==''
-      ? '退場済み（'+String(r.leave_time).substring(0,5)+'）'
-      : '未退場';
-    const alreadyLeft = lt!=='未退場';
-    const item = document.createElement('div');
-    item.className = 'exit-candidate-item' + (alreadyLeft?' check-item disabled':'');
-    item.innerHTML =
-      '<div class="exit-candidate-name">'+escHtml(r.visitor_name)+'</div>'+
-      '<div class="exit-candidate-sub">'+escHtml(r.company_name)+'　来場：'+String(r.arrive_time).substring(0,5)+'　'+lt+'</div>';
-    if(!alreadyLeft){
-      item.onclick = ()=>selectExitCandidate(r, item);
-    }
-    box.appendChild(item);
-  });
-  box.classList.add('show');
-  // 1件だけなら自動選択
-  const available = records.filter(r=>!(r.leave_time&&r.leave_time!=='00:00:00'&&r.leave_time!==''));
-  if(available.length===1){
-    selectExitCandidate(available[0], box.querySelector('.exit-candidate-item:not(.disabled)'));
-  }
-}
-
-/* ===== 候補選択 ===== */
-function selectExitCandidate(record, itemEl){
-  selectedExitId = record.id;
-  // 選択状態の見た目
-  document.querySelectorAll('.exit-candidate-item').forEach(el=>el.classList.remove('selected'));
-  if(itemEl) itemEl.classList.add('selected');
-  // バナー表示
-  const banner = document.getElementById('exitSelectedBanner');
-  banner.textContent = '選択中：'+record.visitor_name+'（'+record.company_name+'）　来場：'+String(record.arrive_time).substring(0,5);
-  // 退場時間セクション表示
-  document.getElementById('exitTimeSection').classList.add('show');
-  // 退場時間欄へスクロール
-  scrollToNext('exitTimeSection');
-}
-
-/* ===== 退場送信 ===== */
+/* ===== 退場送信（氏名＋会社名の完全一致で、本日の未退場記録のみ更新。一覧は返さない） ===== */
+let exitSubmitting=false;
 async function submitExit(){
-  const errEl = document.getElementById('submit-error-exit');
+  if(exitSubmitting)return;
+  const errEl=document.getElementById('submit-error-exit');
   errEl.classList.remove('show');
-  if(!selectedExitId){
-    errEl.textContent='来場記録を検索して候補から選択してください。';
+  const name=document.getElementById('f-exit-name').value.trim();
+  const company=document.getElementById('f-exit-company').value.trim();
+  const exitTime=document.getElementById('f-time-out').value;
+  if(!name||!company||!exitTime){
+    errEl.textContent='氏名・会社・団体名・退場時間をすべて入力してください。';
     errEl.classList.add('show');
     return;
   }
-  const exitTime = document.getElementById('f-time-out').value;
-  if(!exitTime){
-    errEl.textContent='退場時間を入力してください。';
-    errEl.classList.add('show');
-    return;
-  }
+  exitSubmitting=true;
+  const btn=document.getElementById('btn-submit-exit');
+  btn.disabled=true;
+  let updated=0;
   try{
-    await sbPatch('vis_records', `id=eq.${selectedExitId}`, { leave_time: exitTime + ':00' });
+    updated=await sbRpc('register_exit',{p_name:name,p_company:company,p_time:exitTime+':00'});
   }catch(e){
     errEl.textContent='サーバーへの接続に失敗しました。';
+    errEl.classList.add('show');
+    exitSubmitting=false;btn.disabled=false;
+    return;
+  }
+  exitSubmitting=false;btn.disabled=false;
+  if(!updated){
+    errEl.textContent='本日の入場記録が見つかりませんでした。入場時と同じ氏名・会社名をご入力ください。（退場済みの場合も表示されます）';
     errEl.classList.add('show');
     return;
   }
