@@ -95,6 +95,7 @@ input[type=time].input{-webkit-appearance:none;appearance:none;font-size:16px;pa
 .submit-btn.enter:active{background:#0f1c14;transform:scale(0.98)}
 .submit-btn.exit{background:#c0392b;color:#fff}
 .submit-btn.exit:active{background:#a93226;transform:scale(0.98)}
+.submit-btn:disabled{opacity:0.55;cursor:not-allowed;pointer-events:none;transform:none}
 
 /* 送信時エラー（ボタン上に出る） */
 .submit-error{display:none;margin-top:10px;padding:12px 14px;background:#fdf3f2;border:1.5px solid #c0392b;border-radius:10px;font-size:13px;color:#c0392b;line-height:1.6;font-weight:600;text-align:center}
@@ -329,7 +330,7 @@ input[type=time].input{-webkit-appearance:none;appearance:none;font-size:16px;pa
       </div>
     </div>
 
-    <button class="submit-btn enter" onclick="submitEnter()">入力完了</button>
+    <button class="submit-btn enter" id="btn-submit-enter" onclick="submitEnter()">入力完了</button>
     <div class="submit-error" id="submit-error">未選択の項目があります</div>
   </div>
 
@@ -403,17 +404,25 @@ function sbH() {
 }
 async function sbPost(table, body) {
   // 匿名には SELECT 権限がないため、return=minimal（応答本文なし）で送信する
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method:'POST', headers:sbH(), body:JSON.stringify(body)
-  });
-  if (!r.ok) throw new Error(await r.text());
+  const ctrl = new AbortController();
+  const tm = setTimeout(()=>ctrl.abort(), 30000);
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method:'POST', headers:sbH(), body:JSON.stringify(body), signal:ctrl.signal
+    });
+    if (!r.ok) throw new Error(await r.text());
+  } finally { clearTimeout(tm); }
 }
 async function sbRpc(fn, args) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
-    method:'POST', headers:sbH(), body:JSON.stringify(args)
-  });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  const ctrl = new AbortController();
+  const tm = setTimeout(()=>ctrl.abort(), 30000);
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+      method:'POST', headers:sbH(), body:JSON.stringify(args), signal:ctrl.signal
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  } finally { clearTimeout(tm); }
 }
 const radioVals={};
 let policyRead=false;
@@ -680,8 +689,22 @@ window.addEventListener('load',()=>{
 /* ===== ユーティリティ：日付フォーマット ===== */
 function pad2(n){return String(n).padStart(2,'0');}
 
+/* ===== 二重送信防止(送信中はボタンを無効化／成功後も一定時間ロック) ===== */
+const SUBMIT_LOCK_MS=30000; // 送信成功後にロックを維持する時間
+function lockBtn(btn,label){
+  if(!btn.dataset.label)btn.dataset.label=btn.textContent;
+  btn.disabled=true;
+  btn.textContent=label;
+}
+function unlockBtn(btn){
+  btn.disabled=false;
+  if(btn.dataset.label)btn.textContent=btn.dataset.label;
+}
+
 /* ===== 入場送信 ===== */
+let enterSubmitting=false;
 async function submitEnter(){
+  if(enterSubmitting)return; // 送信中の再押下を無視
   // 全項目チェック
   const ok=
     document.getElementById('f-name').value.trim()&&
@@ -714,6 +737,12 @@ async function submitEnter(){
     },50);
     return;
   }
+
+  // 検証OK → 即座にロック(サーバー応答を待たずに二重押しを防ぐ)
+  enterSubmitting=true;
+  const enterBtn=document.getElementById('btn-submit-enter');
+  lockBtn(enterBtn,'送信中…');
+  document.getElementById('submit-error').classList.remove('show');
 
   // 日付（今日）と時間
   const today=new Date();
@@ -760,8 +789,14 @@ async function submitEnter(){
     const err=document.getElementById('submit-error');
     err.textContent='サーバーへの接続に失敗しました。';
     err.classList.add('show');
+    // 失敗時のみ再送信できるよう解除
+    enterSubmitting=false;
+    unlockBtn(enterBtn);
     return;
   }
+
+  // 成功後も一定時間はロック維持(画面を戻して再度押される事故を防ぐ)
+  setTimeout(()=>{enterSubmitting=false;unlockBtn(enterBtn);},SUBMIT_LOCK_MS);
 
   document.getElementById('done-message').textContent='ご協力ありがとうございました。';
   document.getElementById('done-enter-block').style.display='block';
@@ -787,22 +822,24 @@ async function submitExit(){
   }
   exitSubmitting=true;
   const btn=document.getElementById('btn-submit-exit');
-  btn.disabled=true;
+  lockBtn(btn,'送信中…');
   let updated=0;
   try{
     updated=await sbRpc('register_exit',{p_name:name,p_company:company,p_time:exitTime+':00'});
   }catch(e){
     errEl.textContent='サーバーへの接続に失敗しました。';
     errEl.classList.add('show');
-    exitSubmitting=false;btn.disabled=false;
+    exitSubmitting=false;unlockBtn(btn);
     return;
   }
-  exitSubmitting=false;btn.disabled=false;
   if(!updated){
     errEl.textContent='本日の入場記録が見つかりませんでした。入場時と同じ氏名・会社名をご入力ください。（退場済みの場合も表示されます）';
     errEl.classList.add('show');
+    exitSubmitting=false;unlockBtn(btn);
     return;
   }
+  // 成功後も一定時間はロック維持
+  setTimeout(()=>{exitSubmitting=false;unlockBtn(btn);},SUBMIT_LOCK_MS);
   document.getElementById('done-message').textContent='お気をつけてお帰りください。';
   document.getElementById('done-enter-block').style.display='none';
   document.getElementById('done-exit-block').style.display='block';
